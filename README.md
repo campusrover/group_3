@@ -1,29 +1,35 @@
+# Racing
 
-# Stuff to consider:
+How will the robot see the walls?
+    - Mapping of some kind...?
+        - Draw a way forward
+    - Computer vision?
+        - Go into "open space"
 
-# How will the robot see the walls?
-#     - Mapping of some kind...?
-#         - Draw a way forward
-#     - Computer vision?
-#         - Go into "open space"
-
-# How will it know to move fast?
-#     - Always be moving at 1 speed
-#     - Never be not moving at 1 speed
+How will it know to move fast?
+    - Always be moving at 1 speed
+    - Never be not moving at 1 speed
 
 How can a car avoid another?
     - The car in front has the right of way
     - Following cars need a big speed advantage over leading ones
     - Two "lanes" that are invisible
-    - Robots drive in "inner0" lan most of the time, if overtaking switch to outer
+    - Robots drive in "inner" lane most of the time, if overtaking switch to outer
     -
 Pit stop implementation
-    - 
+    - Bot pulls into stop to have its stats reset
+    - Marked area apart from the track
 
 Sub-problems
-    - 
+    - Robot drive around a track
+    - Issue commands to robot to change speed
+    - ROScore running on only one bot with other stuff connected
+    - Two robots driving around a track
+    - Issue commands to both robots to change speed
+    - "overtaking" logic
+    - Commands from multiple computers (vnc abuse?)
 
-Dancing
+# Dancing
 
 Patterns
     - Robots move in concentric circles
