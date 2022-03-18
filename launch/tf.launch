@@ -1,0 +1,11 @@
+  <launch>
+    <node pkg="turtlesim" type="turtle_teleop_key" name="teleop" output="screen"/>
+
+    <node name="broadcaster" pkg="final" type="broadcaster.py" respawn="false" output="screen" >
+      <param name="turtle" type="string" value="robot1" />
+    </node>
+
+    <node pkg="final" type="listener.py"
+    name="listener" output="screen"/>
+
+  </launch>
