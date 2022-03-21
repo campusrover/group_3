@@ -1,137 +1,199 @@
 #!/usr/bin/env python
+
+# Copyright (c) 2011, Willow Garage, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#    * Redistributions of source code must retain the above copyright
+#      notice, this list of conditions and the following disclaimer.
+#    * Redistributions in binary form must reproduce the above copyright
+#      notice, this list of conditions and the following disclaimer in the
+#      documentation and/or other materials provided with the distribution.
+#    * Neither the name of the Willow Garage, Inc. nor the names of its
+#      contributors may be used to endorse or promote products derived from
+#       this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
 import rospy
-import sys
-import math
-import tf
-from std_msgs.msg import String
-from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
-from sensor_msgs.msg import LaserScan
+import sys, select, os
+if os.name == 'nt':
+  import msvcrt
+else:
+  import tty, termios
 
-wall_ahead = False
+BURGER_MAX_LIN_VEL = 0.22
+BURGER_MAX_ANG_VEL = 2.84
 
-# fill in scan callback
-def scan_cb(msg):
-   global ahead
-   ahead = msg.ranges[0]
-   if ahead <= 2:
-      wall_ahead = True
-   else:
-      wall_ahead = False
+WAFFLE_MAX_LIN_VEL = 0.26
+WAFFLE_MAX_ANG_VEL = 1.82
 
-ahead = 5
+LIN_VEL_STEP_SIZE = 0.01
+ANG_VEL_STEP_SIZE = 0.1
 
-# it is not necessary to add more code here but it could be useful
-def key_cb(msg):
-   global state; global last_key_press_time
-   state = msg.data
-   last_key_press_time = rospy.Time.now()
+msg = """
+Control Your TurtleBot3!
+---------------------------
+Moving around:
+        w
+   a    s    d
+        x
 
-# odom is also not necessary but very useful
-def odom_cb(msg):
-   global pose
-   pose = msg.pose
-   return
+w/x : increase/decrease linear velocity (Burger : ~ 0.22, Waffle and Waffle Pi : ~ 0.26)
+a/d : increase/decrease angular velocity (Burger : ~ 2.84, Waffle and Waffle Pi : ~ 1.82)
 
-pose = None
-global speed
-speed = 0
+space key, s : force stop
 
-# print the state of the robot
-def print_state():
+CTRL-C to quit
+"""
 
-   # Looks 9000% better than print spam
-   for i in range (0,30):
-         print()
-   
-   print("---")
-   print("STATE: " + state)
+e = """
+Communications Failed
+"""
 
-   # calculate time since last key stroke
-   time_since = rospy.Time.now() - last_key_press_time
-   print("SECS SINCE LAST KEY PRESS: " + str(time_since.secs))
+def getKey():
+    if os.name == 'nt':
+      if sys.version_info[0] >= 3:
+        return msvcrt.getch().decode()
+      else:
+        return msvcrt.getch()
 
-def get_time_since():
-   return rospy.Time.now() - last_key_press_time
+    tty.setraw(sys.stdin.fileno())
+    rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+    if rlist:
+        key = sys.stdin.read(1)
+    else:
+        key = ''
 
-# init node
-rospy.init_node('dancer')
+    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+    return key
 
-# subscribers/publishers
-scan_sub = rospy.Subscriber('scan', LaserScan, scan_cb)
+def vels(target_linear_vel, target_angular_vel):
+    return "currently:\tlinear vel %s\t angular vel %s " % (target_linear_vel,target_angular_vel)
 
-# RUN rosrun prrexamples key_publisher.py to get /keys
-key_sub = rospy.Subscriber('keys', String, key_cb)
-odom_sub = rospy.Subscriber('odom', Odometry, odom_cb)
+def makeSimpleProfile(output, input, slop):
+    if input > output:
+        output = min( input, output + slop )
+    elif input < output:
+        output = max( input, output - slop )
+    else:
+        output = input
 
-r1_cmd_vel_pub = rospy.Publisher('robot1/cmd_vel', Twist, queue_size=10)
-r2_cmd_vel_pub = rospy.Publisher('robot2/cmd_vel', Twist, queue_size=10)
+    return output
 
-# start in state halted and grab the current time
-state = "h"
-last_key_press_time = rospy.Time.now()
+def constrain(input, low, high):
+    if input < low:
+      input = low
+    elif input > high:
+      input = high
+    else:
+      input = input
 
-# set rate
-rate = rospy.Rate(10)
+    return input
 
-def get_components(char):
-   vectors = {'h': [0,0], 's': [1,1], 'z': [1,0], 
-   'w': [1,0], 'a': [0,1], 's': [-1,0], 'd':[0,-1], ' ':[0,0],
-   'i': [10,0], 'j': [0,.8], 'k': [-5,0], 'l':[0,-.5], ' ':[0,0]}
-   return vectors[char]
+def checkLinearLimitVelocity(vel):
+    if turtlebot3_model == "burger":
+      vel = constrain(vel, -BURGER_MAX_LIN_VEL, BURGER_MAX_LIN_VEL)
+    elif turtlebot3_model == "waffle" or turtlebot3_model == "waffle_pi":
+      vel = constrain(vel, -WAFFLE_MAX_LIN_VEL, WAFFLE_MAX_LIN_VEL)
+    else:
+      vel = constrain(vel, -BURGER_MAX_LIN_VEL, BURGER_MAX_LIN_VEL)
 
-# Wait for published topics, exit on ^c
-while not rospy.is_shutdown():
+    return vel
 
-   print_state()
-   t = Twist()
+def checkAngularLimitVelocity(vel):
+    if turtlebot3_model == "burger":
+      vel = constrain(vel, -BURGER_MAX_ANG_VEL, BURGER_MAX_ANG_VEL)
+    elif turtlebot3_model == "waffle" or turtlebot3_model == "waffle_pi":
+      vel = constrain(vel, -WAFFLE_MAX_ANG_VEL, WAFFLE_MAX_ANG_VEL)
+    else:
+      vel = constrain(vel, -BURGER_MAX_ANG_VEL, BURGER_MAX_ANG_VEL)
 
-   component_vector = get_components(state)
+    return vel
 
-   linear_component = component_vector[0]
-   angular_component = component_vector[1]
+if __name__=="__main__":
+    if os.name != 'nt':
+        settings = termios.tcgetattr(sys.stdin)
 
-   linear_speed = .5
-   angular_speed = 1
+    rospy.init_node('test_teleop')
+    pub = rospy.Publisher('robot1/cmd_vel', Twist, queue_size=10)
+    pub2 = rospy.Publisher('rafael/cmd_vel', Twist, queue_size=10)
 
-   t.linear.x = linear_speed * linear_component
-   t.angular.z = angular_speed * angular_component
+    turtlebot3_model = rospy.get_param("model", "burger")
 
-   # change Twist linear speed over time for spiral movement
-   if state == 's':
-      # Spiral goes "inward"
-      time_since_int = get_time_since().secs
-      t.linear.x = t.linear.x - (.1 * time_since_int)
-      if (t.linear.x <= -1):
-         state = 'h'
+    status = 0
+    target_linear_vel   = 0.0
+    target_angular_vel  = 0.0
+    control_linear_vel  = 0.0
+    control_angular_vel = 0.0
 
+    try:
+      #   print(msg)
+        while(1):
+            key = getKey()
+            if key == 'w' :
+                target_linear_vel = checkLinearLimitVelocity(target_linear_vel + LIN_VEL_STEP_SIZE)
+                status = status + 1
+               #  print(vels(target_linear_vel,target_angular_vel))
+            elif key == 'x' :
+                target_linear_vel = checkLinearLimitVelocity(target_linear_vel - LIN_VEL_STEP_SIZE)
+                status = status + 1
+               #  print(vels(target_linear_vel,target_angular_vel))
+            elif key == 'a' :
+                target_angular_vel = checkAngularLimitVelocity(target_angular_vel + ANG_VEL_STEP_SIZE)
+                status = status + 1
+               #  print(vels(target_linear_vel,target_angular_vel))
+            elif key == 'd' :
+                target_angular_vel = checkAngularLimitVelocity(target_angular_vel - ANG_VEL_STEP_SIZE)
+                status = status + 1
+               #  print(vels(target_linear_vel,target_angular_vel))
+            elif key == ' ' or key == 's' :
+                target_linear_vel   = 0.0
+                control_linear_vel  = 0.0
+                target_angular_vel  = 0.0
+                control_angular_vel = 0.0
+               #  print(vels(target_linear_vel, target_angular_vel))
+            else:
+                if (key == '\x03'):
+                    break
 
-   # change Twist at certain interval for zigzag movement
-   if state == 'z':
-      time_since_int = get_time_since().secs
+            if status == 20 :
+               #  print(msg)
+                status = 0
 
-      started_zagging = False
-      finished_zagging = False
+            twist = Twist()
 
-      # stop and change direction every 6 seconds
-      # Stopping is for 2 seconds
-      if ((time_since_int % 6 == 0 or time_since_int % 6 == 1) and (time_since_int != 0 or time_since_int != 1)):
-         started_zagging = True
-         t.linear.x = 0
+            control_linear_vel = makeSimpleProfile(control_linear_vel, target_linear_vel, (LIN_VEL_STEP_SIZE/2.0))
+            twist.linear.x = control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
 
-         # So we will alternate between going left or right, every other 6-second cycle
-         if (time_since_int % 12 == 0 or time_since_int % 12 == 1):
-            t.angular.z = 1
-         else:
-            t.angular.z = -1
+            control_angular_vel = makeSimpleProfile(control_angular_vel, target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+            twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = control_angular_vel
 
+            pub.publish(twist)
+            pub2.publish(twist)
 
-   speed = t.linear.x
+    except:
+        pass
 
-   # =========================
+    finally:
+        twist = Twist()
+        twist.linear.x = 0.0; twist.linear.y = 0.0; twist.linear.z = 0.0
+        twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = 0.0
+        pub.publish(twist)
+        pub2.publish(twist)
 
-   r1_cmd_vel_pub.publish(t)
-   r2_cmd_vel_pub.publish(t)
-
-   # run at 10hz
-   rate.sleep()
+    if os.name != 'nt':
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
