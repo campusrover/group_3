@@ -1,5 +1,5 @@
   <launch>
-    <node pkg="final" type="test_teleop.py" name="teleop" output="screen"/>
+    <node pkg="final" type="teleop.py" name="teleop" output="screen"/>
 
     <node name="broadcaster" pkg="final" type="broadcaster.py" respawn="false" output="screen" >
       <param name="turtle" type="string" value="robot1" />
