@@ -1,8 +1,14 @@
   <launch>
     <node pkg="final" type="teleop.py" name="teleop" output="screen"/>
 
-    <node name="broadcaster" pkg="final" type="broadcaster.py" respawn="false" output="screen" >
-      <param name="turtle" type="string" value="robot1" />
+    <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_linker" args="0 0 0 0 0 0 1 rafael/odom robc/odom" />
+
+    <node name="rafael_broadcaster" pkg="final" type="broadcaster.py" respawn="false" output="screen" >
+      <param name="turtle" type="string" value="rafael" />
+    </node>
+
+    <node name="robc_broadcaster" pkg="final" type="broadcaster.py" respawn="false" output="screen" >
+      <param name="turtle" type="string" value="robc" />
     </node>
 
     <node pkg="final" type="listener.py" name="listener" output="screen"/>
